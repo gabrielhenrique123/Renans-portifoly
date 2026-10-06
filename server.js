@@ -52,29 +52,26 @@ const transporter = nodemailer.createTransport({
    VERIFICAÇÃO DO GMAIL
 ===================================================== */
 
-transporter.verify((error) => {
-
+transporter.verify((error, success) => {
     if (error) {
-
         console.error("");
         console.error("================================");
-        console.error(" ERRO AO CONECTAR AO GMAIL");
+        console.error("ERRO AO CONECTAR AO GMAIL");
         console.error("================================");
-        console.error(error.message);
+        console.error("Host: smtp.gmail.com");
+        console.error("Porta: 587");
+        console.error("IPv4: ativado");
+        console.error("Erro:", error);
+        console.error("================================");
         console.error("");
-
     } else {
-
         console.log("");
         console.log("================================");
-        console.log(" GMAIL CONECTADO COM SUCESSO");
+        console.log("GMAIL CONECTADO COM SUCESSO");
         console.log("================================");
         console.log("");
-
     }
-
 });
-
 
 /* =====================================================
    ROTA PRINCIPAL
