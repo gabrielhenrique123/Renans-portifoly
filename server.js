@@ -1,7 +1,6 @@
 const express = require("express");
-const nodemailer = require("nodemailer");
-const dotenv = require("dotenv");
 const cors = require("cors");
+const dotenv = require("dotenv");
 const path = require("path");
 
 dotenv.config();
@@ -15,96 +14,36 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors({
     origin: "*",
-    methods: ["GET", "POST"],
-    allowedHeaders: ["Content-Type"]
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Accept"]
 }));
 
 app.use(express.json({ limit: "20kb" }));
 app.use(express.urlencoded({ extended: true }));
 
-/*
-    Permite servir arquivos estáticos caso o servidor
-    também seja acessado diretamente.
-*/
+/* =====================================================
+   ARQUIVOS DO SITE
+===================================================== */
+
 app.use(express.static(__dirname));
 
-
-/* =====================================================
-   CONFIGURAÇÃO DO GMAIL
-===================================================== */
-
-const transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 587,
-    secure: false,
-
-    auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-    },
-
-    tls: {
-        family: 4
-    }
-});
-
-/* =====================================================
-   VERIFICAÇÃO DO GMAIL
-===================================================== */
-
-transporter.verify((error, success) => {
-    if (error) {
-        console.error("");
-        console.error("================================");
-        console.error("ERRO AO CONECTAR AO GMAIL");
-        console.error("================================");
-        console.error("Host: smtp.gmail.com");
-        console.error("Porta: 587");
-        console.error("IPv4: ativado");
-        console.error("Erro:", error);
-        console.error("================================");
-        console.error("");
-    } else {
-        console.log("");
-        console.log("================================");
-        console.log("GMAIL CONECTADO COM SUCESSO");
-        console.log("================================");
-        console.log("");
-    }
-});
-
-/* =====================================================
-   ROTA PRINCIPAL
-===================================================== */
-
 app.get("/", (req, res) => {
-
-    res.sendFile(
-        path.join(__dirname, "index.html")
-    );
-
+    res.sendFile(path.join(__dirname, "index.html"));
 });
-
 
 /* =====================================================
    STATUS DA API
 ===================================================== */
 
 app.get("/api/status", (req, res) => {
-
-    res.status(200).json({
-
+    return res.status(200).json({
         online: true,
-
         message: "Servidor funcionando corretamente."
-
     });
-
 });
 
-
 /* =====================================================
-   ENVIO DO FORMULÁRIO
+   ENVIO DE E-MAIL PELO RESEND
 ===================================================== */
 
 app.post("/api/contact", async (req, res) => {
@@ -120,10 +59,9 @@ app.post("/api/contact", async (req, res) => {
             message
         } = req.body;
 
-
-        /* =============================================
+        /* =================================================
            VALIDAÇÃO
-        ============================================= */
+        ================================================= */
 
         if (
             !name ||
@@ -132,407 +70,297 @@ app.post("/api/contact", async (req, res) => {
             !subject ||
             !message
         ) {
-
             return res.status(400).json({
-
                 success: false,
-
-                message:
-                    "Preencha todos os campos obrigatórios."
-
+                message: "Preencha todos os campos obrigatórios."
             });
-
         }
-
 
         if (!isValidEmail(email)) {
-
             return res.status(400).json({
-
                 success: false,
-
-                message:
-                    "Digite um endereço de e-mail válido."
-
+                message: "Digite um endereço de e-mail válido."
             });
-
         }
-
 
         if (String(name).length > 100) {
-
             return res.status(400).json({
-
                 success: false,
-
-                message:
-                    "O nome é muito grande."
-
+                message: "O nome é muito grande."
             });
-
         }
-
 
         if (String(email).length > 200) {
-
             return res.status(400).json({
-
                 success: false,
-
-                message:
-                    "O e-mail é muito grande."
-
+                message: "O e-mail é muito grande."
             });
-
         }
-
 
         if (String(subject).length > 200) {
-
             return res.status(400).json({
-
                 success: false,
-
-                message:
-                    "O assunto é muito grande."
-
+                message: "O assunto é muito grande."
             });
-
         }
-
 
         if (String(message).length > 5000) {
-
             return res.status(400).json({
-
                 success: false,
-
-                message:
-                    "A mensagem é muito grande."
-
+                message: "A mensagem é muito grande."
             });
-
         }
 
+        /* =================================================
+           VERIFICA API KEY
+        ================================================= */
 
-        /* =============================================
-           PROTEÇÃO HTML
-        ============================================= */
+        if (!process.env.RESEND_API_KEY) {
 
-        const safeName =
-            escapeHtml(name);
+            console.error("RESEND_API_KEY não configurada.");
 
-        const safeEmail =
-            escapeHtml(email);
+            return res.status(500).json({
+                success: false,
+                message: "O servidor de e-mail não está configurado."
+            });
+        }
 
-        const safeProject =
-            escapeHtml(project);
+        /* =================================================
+           DADOS SEGUROS
+        ================================================= */
 
-        const safeBudget =
-            escapeHtml(
-                budget || "Não informado"
-            );
+        const safeName = escapeHtml(name);
+        const safeEmail = escapeHtml(email);
+        const safeProject = escapeHtml(project);
+        const safeBudget = escapeHtml(
+            budget || "Não informado"
+        );
+        const safeSubject = escapeHtml(subject);
+        const safeMessage = escapeHtml(message)
+            .replace(/\n/g, "<br>");
 
-        const safeSubject =
-            escapeHtml(subject);
+        /* =================================================
+           ENVIO PELO RESEND
+        ================================================= */
 
-        const safeMessage =
-            escapeHtml(message)
-                .replace(/\n/g, "<br>");
+        const resendResponse = await fetch(
+            "https://api.resend.com/emails",
+            {
+                method: "POST",
 
+                headers: {
+                    "Authorization": `Bearer ${process.env.RESEND_API_KEY}`,
+                    "Content-Type": "application/json",
+                    "Accept": "application/json"
+                },
 
-        /* =============================================
-           CONFIGURAÇÃO DO E-MAIL
-        ============================================= */
+                body: JSON.stringify({
 
-        const mailOptions = {
+                    /*
+                     * Para começar usando o Resend gratuitamente,
+                     * utilize o remetente de teste do Resend.
+                     */
+                    from: "Renan.dev <onboarding@resend.dev>",
 
-            from:
-                `"Portfólio Renan" <${process.env.EMAIL_USER}>`,
+                    /*
+                     * E-mail que receberá as mensagens
+                     */
+                    to: [
+                        "renanrochafosterdesenvolvedor@gmail.com"
+                    ],
 
-            to:
-                "renanrochafosterdesenvolvedor@gmail.com",
+                    subject: `[Portfólio] ${subject}`,
 
-            replyTo:
-                email,
+                    reply_to: email,
 
-            subject:
-                `[Portfólio] ${subject}`,
-
-            /* =========================================
-               VERSÃO TEXTO
-            ========================================= */
-
-            text: `
+                    text: `
 Nova mensagem recebida pelo portfólio.
 
-Nome:
-${name}
+Nome: ${name}
 
-E-mail:
-${email}
+E-mail: ${email}
 
-Tipo de projeto:
-${project}
+Tipo de projeto: ${project}
 
-Orçamento:
-${budget || "Não informado"}
+Orçamento: ${budget || "Não informado"}
 
-Assunto:
-${subject}
+Assunto: ${subject}
 
 Mensagem:
 ${message}
-            `,
+                    `,
 
-
-            /* =========================================
-               VERSÃO HTML
-            ========================================= */
-
-            html: `
-
+                    html: `
 <!DOCTYPE html>
 
 <html lang="pt-BR">
 
 <head>
 
-    <meta charset="UTF-8">
-
-    <title>
-        Nova mensagem pelo portfólio
-    </title>
+<meta charset="UTF-8">
 
 </head>
 
-
 <body
 style="
-    margin: 0;
-    padding: 30px;
-    background: #fff7fa;
-    font-family: Arial, sans-serif;
-    color: #292126;
+margin:0;
+padding:30px;
+background:#fff7fa;
+font-family:Arial,sans-serif;
+color:#292126;
 "
 >
-
 
 <div
 style="
-    max-width: 700px;
-    margin: auto;
-    background: white;
-    border: 1px solid #f1dce6;
-    border-radius: 16px;
-    overflow: hidden;
+max-width:700px;
+margin:auto;
+background:white;
+border:1px solid #f1dce6;
+border-radius:16px;
+overflow:hidden;
 "
 >
 
+<div
+style="
+background:#ff4f9a;
+padding:25px;
+color:white;
+"
+>
 
-    <!-- CABEÇALHO -->
+<h2 style="margin:0;">
+Nova mensagem pelo portfólio
+</h2>
 
-    <div
-    style="
-        background: #ff4f9a;
-        padding: 25px;
-        color: white;
-    "
-    >
-
-        <h2
-        style="
-            margin: 0;
-        "
-        >
-
-            Nova mensagem pelo portfólio
-
-        </h2>
-
-
-        <p
-        style="
-            margin-bottom: 0;
-            opacity: .9;
-        "
-        >
-
-            Uma pessoa entrou em contato
-            através do site.
-
-        </p>
-
-    </div>
-
-
-    <!-- CONTEÚDO -->
-
-    <div
-    style="
-        padding: 25px;
-    "
-    >
-
-
-        <p>
-
-            <strong>
-                Nome:
-            </strong>
-
-            <br>
-
-            ${safeName}
-
-        </p>
-
-
-        <p>
-
-            <strong>
-                E-mail:
-            </strong>
-
-            <br>
-
-            ${safeEmail}
-
-        </p>
-
-
-        <p>
-
-            <strong>
-                Tipo de projeto:
-            </strong>
-
-            <br>
-
-            ${safeProject}
-
-        </p>
-
-
-        <p>
-
-            <strong>
-                Orçamento:
-            </strong>
-
-            <br>
-
-            ${safeBudget}
-
-        </p>
-
-
-        <p>
-
-            <strong>
-                Assunto:
-            </strong>
-
-            <br>
-
-            ${safeSubject}
-
-        </p>
-
-
-        <hr
-        style="
-            border: 0;
-            border-top: 1px solid #f1dce6;
-            margin: 25px 0;
-        "
-        >
-
-
-        <h3>
-            Mensagem
-        </h3>
-
-
-        <p
-        style="
-            line-height: 1.7;
-        "
-        >
-
-            ${safeMessage}
-
-        </p>
-
-
-    </div>
-
+<p style="margin-bottom:0;opacity:.9;">
+Uma pessoa entrou em contato através do site.
+</p>
 
 </div>
 
+<div style="padding:25px;">
+
+<p>
+<strong>Nome:</strong><br>
+${safeName}
+</p>
+
+<p>
+<strong>E-mail:</strong><br>
+${safeEmail}
+</p>
+
+<p>
+<strong>Tipo de projeto:</strong><br>
+${safeProject}
+</p>
+
+<p>
+<strong>Orçamento:</strong><br>
+${safeBudget}
+</p>
+
+<p>
+<strong>Assunto:</strong><br>
+${safeSubject}
+</p>
+
+<hr
+style="
+border:0;
+border-top:1px solid #f1dce6;
+margin:25px 0;
+"
+>
+
+<h3>
+Mensagem
+</h3>
+
+<p style="line-height:1.7;">
+${safeMessage}
+</p>
+
+</div>
+
+</div>
 
 </body>
 
 </html>
-
-            `
-
-        };
-
-
-        /* =============================================
-           ENVIA O E-MAIL
-        ============================================= */
-
-        await transporter.sendMail(
-            mailOptions
+                    `
+                })
+            }
         );
 
+        /* =================================================
+           RESPOSTA DO RESEND
+        ================================================= */
 
-        /* =============================================
-           LOG
-        ============================================= */
+        const resendText = await resendResponse.text();
+
+        console.log(
+            "Resend status:",
+            resendResponse.status
+        );
+
+        console.log(
+            "Resend resposta:",
+            resendText
+        );
+
+        let resendData = {};
+
+        if (resendText.trim()) {
+
+            try {
+                resendData = JSON.parse(resendText);
+            } catch (error) {
+
+                console.error(
+                    "Resposta do Resend não é JSON:",
+                    resendText
+                );
+            }
+        }
+
+        /* =================================================
+           ERRO DO RESEND
+        ================================================= */
+
+        if (!resendResponse.ok) {
+
+            console.error(
+                "Erro retornado pelo Resend:",
+                resendData
+            );
+
+            return res.status(500).json({
+                success: false,
+                message:
+                    resendData.message ||
+                    resendData.error?.message ||
+                    "O Resend não conseguiu enviar o e-mail."
+            });
+        }
+
+        /* =================================================
+           SUCESSO
+        ================================================= */
 
         console.log("");
-
-        console.log(
-            "================================"
-        );
-
-        console.log(
-            " NOVA MENSAGEM ENVIADA"
-        );
-
-        console.log(
-            "================================"
-        );
-
-        console.log(
-            `Nome: ${name}`
-        );
-
-        console.log(
-            `E-mail: ${email}`
-        );
-
-        console.log(
-            `Projeto: ${project}`
-        );
-
-        console.log(
-            `Assunto: ${subject}`
-        );
-
-        console.log(
-            "================================"
-        );
-
+        console.log("================================");
+        console.log("NOVA MENSAGEM ENVIADA");
+        console.log("================================");
+        console.log(`Nome: ${name}`);
+        console.log(`E-mail: ${email}`);
+        console.log(`Projeto: ${project}`);
+        console.log(`Assunto: ${subject}`);
+        console.log(`Resend ID: ${resendData.id || "não informado"}`);
+        console.log("================================");
         console.log("");
-
-
-        /* =============================================
-           RESPOSTA PARA O SITE
-        ============================================= */
 
         return res.status(200).json({
 
@@ -543,62 +371,32 @@ style="
 
         });
 
-
     } catch (error) {
 
-
-        /* =============================================
-           ERRO
-        ============================================= */
-
         console.error("");
-
-        console.error(
-            "================================"
-        );
-
-        console.error(
-            " ERRO AO ENVIAR E-MAIL"
-        );
-
-        console.error(
-            "================================"
-        );
-
-        console.error(
-            error
-        );
-
-        console.error(
-            "================================"
-        );
-
+        console.error("================================");
+        console.error("ERRO AO ENVIAR E-MAIL");
+        console.error("================================");
+        console.error(error);
+        console.error("================================");
         console.error("");
-
 
         return res.status(500).json({
 
             success: false,
 
             message:
-                "Não foi possível enviar a mensagem. Verifique a configuração do e-mail no servidor."
+                "Não foi possível enviar a mensagem. Tente novamente mais tarde."
 
         });
-
     }
-
 });
 
-
 /* =====================================================
-   TRATAMENTO DE ROTAS NÃO ENCONTRADAS
+   ROTA 404
 ===================================================== */
 
 app.use((req, res) => {
-
-    /* ---------------------------------------------
-       Se for uma rota da API
-    --------------------------------------------- */
 
     if (req.path.startsWith("/api/")) {
 
@@ -606,156 +404,85 @@ app.use((req, res) => {
 
             success: false,
 
-            message:
-                "Rota da API não encontrada."
+            message: "Rota da API não encontrada."
 
         });
-
     }
 
-
-    /* ---------------------------------------------
-       Outras páginas
-    --------------------------------------------- */
-
-    res.status(404).send(`
-
+    return res.status(404).send(`
 <!DOCTYPE html>
 
 <html lang="pt-BR">
 
 <head>
 
-    <meta charset="UTF-8">
+<meta charset="UTF-8">
 
-    <title>
-        Página não encontrada
-    </title>
+<title>Página não encontrada</title>
 
 </head>
 
-
 <body
 style="
-    font-family: Arial;
-    text-align: center;
-    padding: 80px;
+font-family:Arial;
+text-align:center;
+padding:80px;
 "
 >
 
-    <h1>
-        404
-    </h1>
+<h1>404</h1>
 
+<p>Página não encontrada.</p>
 
-    <p>
-        Página não encontrada.
-    </p>
-
-
-    <a href="/">
-        Voltar para o portfólio
-    </a>
+<a href="/">
+Voltar para o portfólio
+</a>
 
 </body>
 
 </html>
-
     `);
-
 });
-
 
 /* =====================================================
    FUNÇÕES AUXILIARES
 ===================================================== */
-
-
-/*
-    Validação simples de e-mail
-*/
 
 function isValidEmail(email) {
 
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
         String(email)
     );
-
 }
-
-
-/*
-    Proteção contra HTML
-*/
 
 function escapeHtml(text) {
 
     return String(text)
 
-        .replace(
-            /&/g,
-            "&amp;"
-        )
-
-        .replace(
-            /</g,
-            "&lt;"
-        )
-
-        .replace(
-            />/g,
-            "&gt;"
-        )
-
-        .replace(
-            /"/g,
-            "&quot;"
-        )
-
-        .replace(
-            /'/g,
-            "&#039;"
-        );
-
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 }
 
-
 /* =====================================================
-   INICIA O SERVIDOR
+   SERVIDOR
 ===================================================== */
 
-app.listen(
-    PORT,
-    "0.0.0.0",
-    () => {
+app.listen(PORT, () => {
 
-        console.log("");
+    console.log("");
+    console.log("================================");
+    console.log(" RENAN PORTFÓLIO");
+    console.log("================================");
+    console.log(
+        `Servidor rodando na porta ${PORT}`
+    );
+    console.log(
+        "API: /api/status"
+    );
+    console.log("================================");
+    console.log("");
 
-        console.log(
-            "================================"
-        );
-
-        console.log(
-            " RENAN PORTFÓLIO"
-        );
-
-        console.log(
-            "================================"
-        );
-
-        console.log(
-            `Servidor rodando na porta ${PORT}`
-        );
-
-        console.log(
-            `API: /api/status`
-        );
-
-        console.log(
-            "================================"
-        );
-
-        console.log("");
-
-    }
-);
+});
