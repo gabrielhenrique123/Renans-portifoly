@@ -47,19 +47,15 @@ if (!form || !button || !status) {
             console.log("Enviando formulário para:", API_URL);
 
             // Envia para o backend do Render
-            const response = await fetch(
-                `${API_URL}/api/contact`,
-                {
-                    method: "POST",
-
-                    headers: {
-                        "Content-Type": "application/json",
-                        "Accept": "application/json"
-                    },
-
-                    body: JSON.stringify(data)
-                }
-            );
+            
+            const response = await fetch(`${API_URL}/api/contact`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json"
+                },
+                body: JSON.stringify(data)
+            });
 
             // Lê a resposta como texto primeiro
             const responseText = await response.text();
